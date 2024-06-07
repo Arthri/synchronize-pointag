@@ -1,0 +1,12 @@
+name: Check End-of-Line Sequences
+run-name: Check End-of-Line Sequences
+
+on:
+  push:
+    branches: [ master, dev ]
+  pull_request:
+    branches: [ master, dev ]
+
+jobs:
+  check-eol:
+    uses: Arthri/check-eol/.github/workflows/check-eol.yml@v1
