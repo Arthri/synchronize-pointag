@@ -1,0 +1,14 @@
+name: Synchronize Pointag
+
+on:
+  delete:
+
+  push:
+    tags:
+      - '**'
+
+jobs:
+  synchronize-pointag:
+    permissions:
+      contents: write
+    uses: ./.github/workflows/i.yml
