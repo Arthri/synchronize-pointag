@@ -1,0 +1,109 @@
+name: Synchronize Pointag
+
+on:
+  workflow_call:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  synchronize-pointag:
+    runs-on: ubuntu-22.04
+    if: ${{ (github.event_name != 'push' || startsWith(github.event.ref, 'refs/tags/')) && (github.event_name != 'delete' || github.event.ref_type == 'tag') }}
+    env:
+      CONTINUE_JOB: 1
+    permissions:
+      contents: write
+    timeout-minutes: 2
+
+    steps:
+      - name: Extract information
+        id: extract
+        env:
+          EVENT_REF: ${{ github.event.ref }}
+          IS_PUSH_EVENT: ${{ github.event_name == 'push' }}
+          IS_MISC_EVENT: ${{ github.event_name != 'push' && github.event_name != 'delete' }}
+        run: |
+          if [[ $IS_MISC_EVENT == 'true' ]] ; then
+            echo '::error::The workflow only supports the on.push and the on.delete triggers.'
+            exit 1
+          fi
+
+          if [[ $IS_PUSH_EVENT == 'true' ]] ; then
+            EVENT_REF="${EVENT_REF#refs/tags/}"
+          fi
+          if [[ $EVENT_REF == */* ]] ; then
+            tag_directory="${EVENT_REF%/*}/"
+          fi
+
+          version="${EVENT_REF##*/}"
+          if [[ $version =~ ^v[0-9]$ ]] ; then
+            echo '::notice::Refusing to overwrite user-initiated update of a pointag.'
+            echo 'CONTINUE_JOB=0' >> "$GITHUB_ENV"
+            exit 0
+          elif [[ ! $version =~ ^v[0-9]+\.[0-9] ]] ; then
+            echo '::error::Incorrect version format.'
+            exit 1
+          fi
+
+          major_pointag="$tag_directory${version%%.*}"
+          echo "tag-directory=$tag_directory" >> "$GITHUB_OUTPUT"
+          echo "major-pointag=$major_pointag" >> "$GITHUB_OUTPUT"
+          echo "major-version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Update or delete pointag
+        if: ${{ env.CONTINUE_JOB == '1' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IS_DELETE_EVENT: ${{ github.event_name == 'delete' }}
+
+          MAJOR_POINTAG: ${{ steps.extract.outputs.major-pointag }}
+          MAJOR_VERSION: ${{ steps.extract.outputs.major-version }}
+          TAG_DIRECTORY: ${{ steps.extract.outputs.tag-directory }}
+
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          git -c init.defaultBranch=default-branch init
+          git remote add origin "$REPOSITORY_URL"
+          git config "http.$REPOSITORY_URL.extraheader" "Authorization: Basic $(echo -n "x-access-token:$GH_TOKEN" | base64 -w0)"
+
+          tags_under_major_version="$(git ls-remote --sort=v:refname --tags origin "refs/tags/$MAJOR_POINTAG*")"
+          major_pointag_information="$(head -1 <<< "$tags_under_major_version")"
+          highest_tag_information="$(tail -1 <<< "$tags_under_major_version")"
+          highest_tag_reference="$(cut -s -f 2 <<< "$highest_tag_information")"
+
+          if [[ -z $major_pointag_information ]] ; then
+            if [[ $IS_DELETE_EVENT == 'true' ]] ; then
+              echo '::notice::User-initated deletion of major pointag.'
+              exit 0
+            else
+              echo "::error::Failed to find any tags under $MAJOR_VERSION."
+              exit 1
+            fi
+          elif [[ $major_pointag_information == $highest_tag_information ]] ; then
+            if [[ $highest_tag_reference == "refs/tags/$MAJOR_POINTAG" ]] ; then
+              echo '::notice::Deleting dangling pointag.'
+              git push -f origin ":refs/tags/$MAJOR_POINTAG" || true
+              exit 0
+            else
+              create_pointag='true'
+            fi
+          fi
+
+          highest_tag_revision="$(cut -s -f 1 <<< "$highest_tag_information")"
+
+          if [[ $create_pointag != 'true' ]] ; then
+            major_pointag_revision="$(cut -s -f 1 <<< "$major_pointag_information")"
+            if [[ $major_pointag_revision == $highest_tag_revision ]] ; then
+              echo "$MAJOR_POINTAG is already pointing at the highest tag under it."
+              exit 0
+            fi
+
+            echo "Setting $MAJOR_POINTAG to $highest_tag_revision ($highest_tag_reference)."
+          else
+            echo "Creating $MAJOR_POINTAG and setting it to $highest_tag_revision ($highest_tag_reference)."
+          fi
+
+          git fetch --depth 1 origin "$highest_tag_revision"
+          git push -f origin "FETCH_HEAD:refs/tags/$MAJOR_POINTAG"
