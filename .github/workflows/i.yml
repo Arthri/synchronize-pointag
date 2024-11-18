@@ -38,7 +38,7 @@ jobs:
           fi
 
           version="${EVENT_REF##*/}"
-          if [[ $version =~ ^v[[:digit:]]$ ]] ; then
+          if [[ $version =~ ^v[0-9]$ ]] ; then
             echo '::notice::Refusing to overwrite user-initiated update of a pointag.'
             echo 'CONTINUE_JOB=0' >> "$GITHUB_ENV"
             exit 0
