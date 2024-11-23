@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 set -eo pipefail
 
 LAST_WORKFLOW_RUN_ID=''
