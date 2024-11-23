@@ -1,5 +1,4 @@
 name: Release Request
-run-name: Release Request
 
 on:
   pull_request:
@@ -13,8 +12,7 @@ on:
       - master
 
 jobs:
-  handle-release-request:
-    name: ${{ github.event.action == 'closed' && 'Resolve ' || 'Verify ' }}Release Request
+  process:
     permissions:
       contents: write
     uses: Arthri/release-request/.github/workflows/release-request.yml@v1
