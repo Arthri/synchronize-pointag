@@ -12,7 +12,8 @@ on:
       - master
 
 jobs:
-  process:
+  handle:
     permissions:
       contents: write
-    uses: Arthri/release-request/.github/workflows/release-request.yml@v1
+      pull-requests: write
+    uses: Arthri/release-request/.github/workflows/i.yml@v2
